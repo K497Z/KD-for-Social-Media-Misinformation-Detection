@@ -153,23 +153,14 @@ The experiments were conducted in a Python environment with the following main d
 
 ```text
 python == 3.10.19
-torch == 2.6.0
-transformers == 5.3.0
-accelerate == 1.12.0
-datasets == 4.6.1
-sentence-transformers == 5.2.3
-sentencepiece == 0.2.1
+torch == 2.2.1
+transformers == 4.38.2
 numpy == 1.26.4
-pandas == 2.3.3
-scikit-learn == 1.7.2
-scipy == 1.15.3
-tqdm == 4.67.1
-PyYAML == 6.0.3
-matplotlib == 3.10.8
-seaborn == 0.13.2
-optuna == 4.6.0
-protobuf == 3.20.3
-requests == 2.32.5
+pandas == 2.2.1
+scikit-learn == 1.4.1.post1
+PyYAML == 6.0.1
+sentencepiece == 0.2.0
+protobuf == 4.25.3
 ```
 
 A CUDA-compatible GPU is recommended for efficient training. The original experiments were conducted in a CUDA-enabled PyTorch environment.
@@ -177,7 +168,7 @@ A CUDA-compatible GPU is recommended for efficient training. The original experi
 Install the required packages using:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirement.txt
 ```
 
 If CUDA-specific installation is required, please install the PyTorch version that matches the local CUDA environment.

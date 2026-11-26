@@ -1,33 +1,52 @@
-import torch
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_recall_fscore_support
 import numpy as np
-import torch.nn.functional as F
+import torch
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+
+from utils import move_batch
+
+
+def calculate_metrics(labels, predictions, probabilities):
+    if not labels:
+        raise ValueError('Evaluation data is empty')
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, labels=[0, 1], zero_division=0)
+    auc = float(roc_auc_score(labels, probabilities)) if len(set(labels)) == 2 else None
+    return {'accuracy': float(accuracy_score(labels, predictions)), 'AUC': auc,
+            'macro_f1': float(np.mean(f1)), 'precision_macro': float(np.mean(precision)),
+            'recall_macro': float(np.mean(recall)), 'f1_real': float(f1[0]), 'f1_fake': float(f1[1]),
+            'precision_real': float(precision[0]), 'precision_fake': float(precision[1]),
+            'recall_real': float(recall[0]), 'recall_fake': float(recall[1])}
+
 
 class Evaluation:
-    def __init__(self, model, config, test_data):
+    def __init__(self, model, config, loader, teacher_name=None):
         self.model = model
-        self.config = config
-        self.device = torch.device(config["training"]["device"])
-        self.test_loader = DataLoader(TensorDataset(*test_data), batch_size=config["training"]["batch_size"], shuffle=False, num_workers=0)
+        self.device = torch.device(config.get('device', 'cpu'))
+        self.loader = loader
+        self.teacher_name = teacher_name
 
     def evaluate(self):
-        self.model.eval()
-        all_preds, all_labels, all_probs = [], [], []
+        network = self.model.student if hasattr(self.model, 'student') else self.model
+        network.eval()
+        labels, predictions, probabilities = [], [], []
         with torch.no_grad():
-            for batch in self.test_loader:
-                batch = [b.to(self.device) for b in batch]
-                c_ids, c_mask, k_ids, k_mask, labels = batch
-                out = self.model(c_ids, c_mask, k_ids, k_mask)
-                if isinstance(out, dict): logits = out["logits"]
-                else: logits = out
-                probs = F.softmax(logits, dim=1)
-                preds = torch.argmax(logits, dim=1)
-                all_preds.extend(preds.cpu().numpy())
-                all_labels.extend(labels.cpu().numpy())
-                all_probs.extend(probs[:, 1].cpu().numpy())
-        acc = accuracy_score(all_labels, all_preds)
-        f1_macro = f1_score(all_labels, all_preds, average='macro')
-        try: auc = roc_auc_score(all_labels, all_probs)
-        except: auc = 0.0
-        return {"macro_f1": f1_macro, "accuracy": acc, "auc": auc}
+            for raw in self.loader:
+                batch = move_batch(raw, self.device)
+                if self.teacher_name is None:
+                    logits = network(batch['source_ids']['student'], batch['source_masks']['student'])
+                else:
+                    name = self.teacher_name
+                    logits = network(batch['source_ids'][name], batch['source_masks'][name],
+                                     batch['comment_ids'].get(name), batch['comment_masks'].get(name),
+                                     batch['valid_comments'], batch['sentiment'])
+                probabilities.extend(torch.softmax(logits, dim=-1)[:, 1].cpu().tolist())
+                predictions.extend(logits.argmax(dim=-1).cpu().tolist())
+                labels.extend(batch['label'].cpu().tolist())
+        return calculate_metrics(labels, predictions, probabilities)
+
+
+def load_student(checkpoint_path, device='cpu', offline=False):
+    from model import StudentModel
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+    student = StudentModel(checkpoint['model_name'], checkpoint.get('num_classes', 2), local_files_only=offline)
+    student.load_state_dict(checkpoint['state_dict'], strict=True)
+    return student.to(device).eval()
